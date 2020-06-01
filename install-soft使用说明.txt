@@ -1,0 +1,18 @@
+1.请在root用户下使用该脚本
+2.脚本中所包含的txt文件及安装包需要和该脚本放在同一路径下
+3.txt文件主要用于存放需要安装软件的服务器ip,请提前做好集群规划
+  txt文件格式:
+	ip地址:root:密码(eg:10.3.6.22:root:123456)
+4.在运行该脚本时,需传入一个参数
+(参数可以为:keygen/disableFireWalld/install_JDK/install_Zookeeper/start_Zookeeper/stop_Zookeeper/install_Hadoop/install_Hbase/install_Kafka/start_Kafka/all)
+(eg:./install-soft install_Hadoop----安装hadoop)
+5.all参数的执行顺序为:
+	keygen
+	disableFireWalld
+	install_JDK
+	install_Zookeeper
+	start_Zookeeper
+	install_Hadoop
+	install_Hbase
+	install_Kafka
+	start_Kafka
