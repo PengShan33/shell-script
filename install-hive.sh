@@ -19,7 +19,8 @@ fi
 if [ -n "$2" ] ;then
     MYSQL_PW=$2
 else 
-    MYSQL_PW=123456
+    echo "请输入Mysql密码"
+	exit 1
 fi
 
 function install_Mysql(){

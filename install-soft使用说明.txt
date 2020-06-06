@@ -4,7 +4,22 @@
   txt文件格式:
 	ip地址:root:密码(eg:10.3.6.22:root:123456)
 4.在运行该脚本时,需传入一个参数
-(参数可以为:keygen/disableFireWalld/install_JDK/install_Zookeeper/start_Zookeeper/stop_Zookeeper/install_Hadoop/install_Hbase/install_Kafka/start_Kafka/all)
+参数可以为:
+			keygen
+			disableFireWalld
+			install_JDK
+			install_Zookeeper
+			start_Zookeeper
+			stop_Zookeeper
+			install_Hadoop
+			install_Hbase
+			install_Kafka
+			start_Kafka
+			stop_Kafka
+			install_Flink
+			install_Flume
+			install_Opentsdb
+			all
 (eg:./install-soft install_Hadoop----安装hadoop)
 5.all参数的执行顺序为:
 	keygen
@@ -16,3 +31,7 @@
 	install_Hbase
 	install_Kafka
 	start_Kafka
+	install_Flink
+	install_Flume
+	install_Opentsdb
+6.建议:按照需要分步进行安装,最好不要使用all参数
