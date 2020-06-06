@@ -6,6 +6,8 @@ HA_FILE=hadoop.txt
 ZK_FILE=zookeeper.txt
 HB_FILE=hbase.txt
 KF_FILE=kafka.txt
+FLINK_FILE=flink.txt
+FLUME_FILE=flume.txt
 
 USER=root
 USER_PATH=/$USER
@@ -28,12 +30,24 @@ HBASE=hbase-2.2.4
 KAFKA_NAME="kafka_2.11-2.1.0.tgz"
 KAFKA=kafka_2.11-2.1.0
 
+FLINK_NAME="flink-1.10.1-bin-scala_2.11.tgz"
+FLINK=flink-1.10.1
+FLINK_HADOOP="flink-shaded-hadoop-2-uber-2.8.3-10.0.jar"
+
+FLUME_NAME="apache-flume-1.8.0-bin.tar.gz"
+FLUME=apache-flume-1.8.0-bin
+
+TSDB_NAME="opentsdb-2.3.2.tar.gz"
+TSDB=opentsdb-2.3.2
+
 ALL_IPS=($(awk -F : '{print $1}' $FILE))
 ALL_PW=($(awk -F : '{print $3}' $FILE))
 HADOOP_IPS=($(awk -F : '{print $1}' $HA_FILE))
 ZK_IPS=($(awk -F : '{print $1}' $ZK_FILE))
 HB_IPS=($(awk -F : '{print $1}' $HB_FILE))
 KAFKA_IPS=($(awk -F : '{print $1}' $KF_FILE))
+FLINK_IPS=($(awk -F : '{print $1}' $FLINK_FILE))
+FLUME_IPS=($(awk -F : '{print $1}' $FLUME_FILE))
 
 NN01=${HADOOP_IPS[0]}
 NN02=${HADOOP_IPS[1]}
@@ -109,7 +123,6 @@ function keygen(){
 }
 
 #关闭并禁用当前操作系统的防火墙
-#关闭防火墙不成功,还需要再测试#
 function disableFireWalld(){
 	for((i=0;i<${#ALL_IPS[@]};i++));
 	do
@@ -117,7 +130,7 @@ function disableFireWalld(){
 			echo "${ALL_IPS[$i]}当前系统的防火墙状态如下:"
 			firewall-cmd --state
 			echo "正在关闭防火墙..."
-			systemctl stop firewall.server.service &> /dev/null
+			systemctl stop firewall.server &> /dev/null
 			systemctl disable firewall.service &> /dev/null
 			echo "${ALL_IPS[$i]}当前系统的防火墙状态如下:"
 			firewall-cmd --state
@@ -182,6 +195,7 @@ function install_JDK(){
 	for IP in ${ALL_IPS[@]};
 	do
 		if [ "${IP}" = "${LOCAL_HOST}" ];then
+			cd
 			source $PROFILE
 			java -version
 		else
@@ -202,6 +216,7 @@ function install_JDK(){
 	# fi
 }
 
+#安装zookeeper
 function install_Zookeeper(){
 	echo "============开始安装zookeeper============"
 
@@ -319,6 +334,7 @@ function stop_Zookeeper(){
 	done
 }
 
+#安装hadoop
 function install_Hadoop(){
 	echo "============开始安装hadoop============"
 
@@ -697,6 +713,7 @@ function install_Hadoop(){
 	fi
 }
 
+#安装hbase
 function install_Hbase(){
 	echo "============正在安装hbase============"
 
@@ -791,6 +808,8 @@ function install_Hbase(){
 		for IP in ${HB_IPS[@]};
 		do
 			if [ "${IP}" = "${LOCAL_HOST}" ];then
+				cd
+				source $PROFILE
 				hbase version
 				echo "${IP} hbase安装成功"
 			else
@@ -818,6 +837,7 @@ function install_Hbase(){
 	fi
 }
 
+#安装kafka
 function install_Kafka(){ 
 	echo "============开始安装kafka============"
 	#对zookeeper的ip和port进行拼接
@@ -932,6 +952,231 @@ function stop_Kafka(){
 	done
 }
 
+#安装flink
+function install_Flink(){
+	echo "============开始安装flink============"
+    #对zookeeper的ip和port进行拼接
+    ZOOKEEPER_PORT=""
+    for((i=0;i<${#ZK_IPS[@]};i++));
+    do
+		ZOOKEEPER_PORT="$ZOOKEEPER_PORT${ZK_IPS[$i]}:2181,"
+    done
+    ZOOKEEPER_PORT=`echo ${ZOOKEEPER_PORT%,}`
+	
+	#准备slaves
+	SLAVES=""
+	for((i=0;i<${#FLINK_IPS[@]};i++));
+	do
+		SLAVES="${SLAVES}${FLINK_IPS[$i]}\n"
+	done
+	SLAVES=`echo ${SLAVES%'\n'}`
+
+    sleep 1
+	echo "正在解压flink安装包,请稍等..."
+    #解压kafka安装包
+    cp ./$FLINK_NAME $USER_INSTALL_PATH
+    tar -zxvf $USER_INSTALL_PATH/$FLINK_NAME -C $USER_SOFT_PATH
+    mv $USER_SOFT_PATH/$FLINK $USER_SOFT_PATH/flink
+	
+	cp ./$FLINK_HADOOP $USER_SOFT_PATH/flink/lib/
+	
+    sleep 1
+    echo "正在设置配置文件..."
+    #开始配置flink
+    flink_conf="$USER_SOFT_PATH/flink/conf/flink-conf.yaml"
+	zoo_cfg="$USER_SOFT_PATH/flink/conf/zoo.cfg"
+	masters="$USER_SOFT_PATH/flink/conf/masters"
+	slaves="$USER_SOFT_PATH/flink/conf/slaves"
+    
+	#configure flink-conf.yaml
+    sed -i "/jobmanager\.rpc\.address/d" $flink_conf
+	sed -i "/^#.*availability: zookeeper/a high-availability: zookeeper" $flink_conf
+	sed -i "/^#.*availability\.storageDir:.*/a high-availability.storageDir: hdfs://hdfscluster:8020/flink/ha" $flink_conf
+	sed -i "/^#.*zookeeper\.quorum:.*/a high-availability.zookeeper.quorum: $ZOOKEEPER_PORT" $flink_conf
+	sed -i "/^#.*state\.backend: filesystem/a state.backend: filesystem" $flink_conf
+	sed -i "/^#.*checkpoints\.dir:.*/a state.checkpoints.dir: hdfs://hdfscluster:8020/flink/flink-checkpoints" $flink_conf
+	sed -i "/^#.*savepoints\.dir:.*/a state.savepoints.dir: hdfs://hdfscluster:8020/flink/flink-checkpoints" $flink_conf
+	sed -i "/^#.*rest\.port:.*/a rest.port: 8081" $flink_conf
+	
+	#configure zoo.cfg
+	SERVER=""
+	for((i=0;i<${#ZK_IPS[@]};i++));
+	do
+		echo "${SERVER}server.$[$i+1]=${ZK_IPS[$i]}:2888:3888" >> $zoo_cfg
+	done
+	
+	#configure master
+	echo "$NN01:8081" > $masters
+	echo "$NN02:8081" >> $masters
+	
+	#configure slaves
+	echo -e $SLAVES > $slaves
+	
+    sleep 1
+    echo "正在设置环境变量..."
+    #configure Environment variables
+    echo "export FLINK_HOME=$USER_SOFT_PATH/flink" >> $PROFILE
+	echo "export HADOOP_CONF_DIR=\${HADOOP_HOME}/etc/hadoop" >> $PROFILE
+	echo "export HADOOP_CLASSPATH=\`hadoop classpath\`" >> $PROFILE
+    oldpath=`grep '^export PATH=.*' $PROFILE`
+    sed -i "/export PATH=/c \\$oldpath:\$FLINK_HOME/bin" $PROFILE
+	
+	#远程拷贝
+	sleep 1
+	echo "正在远程拷贝..."
+	for IP in ${FLINK_IPS[@]};
+	do
+		if [ "${IP}" = "${LOCAL_HOST}" ];then
+			cd
+			source $PROFILE
+		else
+			scp -r $USER_SOFT_PATH/flink $USER@$IP:$USER_SOFT_PATH/
+			scp $PROFILE $USER@$IP:$USER_PATH/
+		fi
+	done
+	
+	for IP in ${FLINK_IPS[@]};
+	do
+		if [ "${IP}" = "${LOCAL_HOST}" ];then
+			cd
+			source $PROFILE
+		else
+			/usr/bin/expect <<-EOF
+					spawn ssh $IP
+					expect "*#" { send "source $PROFILE\r" }
+					expect "*#" { send "logout\r"}
+					expect eof
+				EOF
+		fi
+	done
+	
+	cd
+	source $PROFILE
+	#与配置文件中的hdfs路径保持一致
+	hadoop fs -mkdir -p /flink/ha
+	hadoop fs -mkdir -p /flink/flink-checkpoints	
+	
+	#启动flink集群
+	sleep 1
+	echo "正在启动flink集群..."
+	$USER_SOFT_PATH/flink/bin/start-cluster.sh
+
+}
+
+#安装flume
+function install_Flume(){
+	echo "============开始安装flume============"
+	sleep 1
+    echo "正在解压flume安装包,请稍等..."
+    #解压kafka安装包
+    cp ./$FLUME_NAME $USER_INSTALL_PATH
+    tar -zxvf $USER_INSTALL_PATH/$FLUME_NAME -C $USER_SOFT_PATH
+    mv $USER_SOFT_PATH/$FLUME $USER_SOFT_PATH/flume
+
+    sleep 1
+    echo "正在设置配置文件..."
+    #开始配置flume
+	cp $USER_SOFT_PATH/flume/conf/flume-env.sh.template $USER_SOFT_PATH/flume/conf/flume-env.sh
+	flume_env=$USER_SOFT_PATH/flume/conf/flume-env.sh
+    #configure flume-env.sh
+    JAVA=$USER_SOFT_PATH/java
+    JAVA=$(echo $JAVA |sed -e 's/\//\\\//g')
+    sed -i "/^#.*export JAVA_HOME=.*/a export JAVA_HOME=$JAVA/" $flume_env
+
+    sleep 1
+    echo "正在设置环境变量..."
+    #configure Environment variables
+    echo "export FLUME_HOME=$USER_SOFT_PATH/flume" >> $PROFILE
+    oldpath=`grep '^export PATH=.*' $PROFILE`
+    sed -i "/export PATH=/c \\$oldpath:\$FLUME_HOME/bin" $PROFILE
+	
+	#远程拷贝
+	sleep 1
+	echo "正在远程拷贝..."
+	for IP in ${FLUME_IPS[@]};
+	do
+		if [ "${IP}" = "${LOCAL_HOST}" ];then
+			source $PROFILE
+		else
+			scp -r $USER_SOFT_PATH/flume $USER@$IP:$USER_SOFT_PATH/
+			scp $PROFILE $USER@$IP:$USER_PATH/
+		fi
+	done
+	
+	for IP in ${FLUME_IPS[@]};
+	do
+		if [ "${IP}" = "${LOCAL_HOST}" ];then
+			cd
+			source $PROFILE
+			flume-ng version
+		else
+			/usr/bin/expect <<-EOF
+					spawn ssh $IP
+					expect "*#" { send "source $PROFILE\r" }
+					expect "*#" { send "flume-ng version\r"}
+					expect "*#" { send "logout\r"}
+					expect eof
+				EOF
+		fi
+	done
+	
+	if [ $? -eq 0 ];then
+		echo "flume安装成功"
+	else
+		echo "flume安装失败"
+		exit 1
+	fi
+
+}
+
+#安装opentsdb
+function install_Opentsdb(){ 
+	echo "============开始安装opentsdb============"
+	yum install gnuplot
+	
+	#对hbase的ip进行拼接
+	HBASE_C=""
+	for((i=0;i<${#HB_IPS[@]};i++));
+	do
+	HBASE_C="$HBASE_C${HB_IPS[$i]},"
+	done
+	HBASE_C=`echo ${HBASE_C%,}`  
+
+	echo "正在解压opentsdb安装包,请稍等..."
+	#解压opentsdb安装包
+	cp ./$TSDB_NAME $USER_INSTALL_PATH
+	tar -zxvf $USER_INSTALL_PATH/$TSDB_NAME -C $USER_SOFT_PATH
+	mv $USER_SOFT_PATH/$TSDB $USER_SOFT_PATH/opentsdb
+	
+	mkdir -p $USER_SOFT_PATH/opentsdb/build
+	cp -r $USER_SOFT_PATH/opentsdb/third_party $USER_SOFT_PATH/opentsdb//build
+	$USER_SOFT_PATH/opentsdb/build.sh
+	
+	#建表
+	cd
+	env COMPRESSION=NONE HBASE_HOME=$USER_SOFT_PATH/hbase $USER_SOFT_PATH/opentsdb/src/create_table.sh
+	
+	sleep 1
+	echo "正在设置配置文件..."
+	#开始配置opentsdb
+	opentsdb_conf="$USER_SOFT_PATH/opentsdb/src/opentsdb.conf"
+	#configure opentsdb.conf
+	sed -i "s/tsd\.network\.port =.*/tsd.network.port=4399/g" $opentsdb_conf
+	sed -i "/^#.*0\.0\.0\.0$/a tsd.network.bind=0.0.0.0" $opentsdb_conf
+	sed -i "s/tsd\.http\.staticroot =.*/tsd.http.staticroot=.\/staticroot/g" $opentsdb_conf
+	TSDB_CACHEDIR=$USER_SOFT_PATH/opentsdb/tasb_cache
+	TSDB_CACHEDIR=$(echo $TSDB_CACHEDIR |sed -e 's/\//\\\//g')
+	sed -i "s/tsd.http.cachedir =.*/tsd.http.cachedir=$TSDB_CACHEDIR/g" $opentsdb_conf
+	sed -i "s/^#.*metrics.*false$/tsd.core.auto_create_metrics=true/g" $opentsdb_conf
+	sed -i "s/^#.*data_table.*tsdb$/tsd.storage.hbase.data_table=tsdb/g" $opentsdb_conf
+	sed -i "s/^#.*zk_basedir.*hbase$/tsd.storage.hbase.zk_basedir=\/hbase/g" $opentsdb_conf
+	sed -i "/^#.*zk_quorum.*localhost$/a tsd.storage.hbase.zk_quorum=$HBASE_C" $opentsdb_conf
+	echo "tsd.storage.fix_duplicates=true" >> $opentsdb_conf
+
+	#启动opentsdb
+	nohup $USER_SOFT_PATH/opentsdb/build/tsdb tsd --config=$USER_SOFT_PATH/opentsdb/src/opentsdb.conf &
+}
+
 case $1 in
 "keygen"){
         keygen
@@ -963,6 +1208,18 @@ case $1 in
 "start_Kafka"){
         start_Kafka
 };;
+"stop_Kafka"){
+        stop_Kafka
+};;
+"install_Flink"){
+        install_Flink
+};;
+"install_Flume"){
+        install_Flume
+};;
+"install_Opentsdb"){
+        install_Opentsdb
+};;
 "all"){
         keygen
 		disableFireWalld
@@ -973,5 +1230,8 @@ case $1 in
 		install_Hbase
 		install_Kafka
 		start_Kafka
+		install_Flink
+		install_Flume
+		install_Opentsdb
 };;
 esac
