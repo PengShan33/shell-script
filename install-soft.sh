@@ -1138,7 +1138,7 @@ function install_Opentsdb(){
 	HBASE_C=""
 	for((i=0;i<${#HB_IPS[@]};i++));
 	do
-	HBASE_C="$HBASE_C${HB_IPS[$i]},"
+	HBASE_C="${HBASE_C}${HB_IPS[$i]},"
 	done
 	HBASE_C=`echo ${HBASE_C%,}`  
 
@@ -1149,8 +1149,9 @@ function install_Opentsdb(){
 	mv $USER_SOFT_PATH/$TSDB $USER_SOFT_PATH/opentsdb
 	
 	mkdir -p $USER_SOFT_PATH/opentsdb/build
-	cp -r $USER_SOFT_PATH/opentsdb/third_party $USER_SOFT_PATH/opentsdb//build
-	$USER_SOFT_PATH/opentsdb/build.sh
+	cp -r $USER_SOFT_PATH/opentsdb/third_party $USER_SOFT_PATH/opentsdb/build
+	cd $USER_SOFT_PATH/opentsdb/
+	./build.sh
 	
 	#建表
 	cd
@@ -1163,7 +1164,9 @@ function install_Opentsdb(){
 	#configure opentsdb.conf
 	sed -i "s/tsd\.network\.port =.*/tsd.network.port=4399/g" $opentsdb_conf
 	sed -i "/^#.*0\.0\.0\.0$/a tsd.network.bind=0.0.0.0" $opentsdb_conf
-	sed -i "s/tsd\.http\.staticroot =.*/tsd.http.staticroot=.\/staticroot/g" $opentsdb_conf
+	STATICROOT=$USER_SOFT_PATH/opentsdb/build/staticroot
+	STATICROOT=$(echo $STATICROOT |sed -e 's/\//\\\//g')
+	sed -i "s/tsd\.http\.staticroot =.*/tsd.http.staticroot=$STATICROOT/g" $opentsdb_conf
 	TSDB_CACHEDIR=$USER_SOFT_PATH/opentsdb/tasb_cache
 	TSDB_CACHEDIR=$(echo $TSDB_CACHEDIR |sed -e 's/\//\\\//g')
 	sed -i "s/tsd.http.cachedir =.*/tsd.http.cachedir=$TSDB_CACHEDIR/g" $opentsdb_conf
@@ -1174,7 +1177,16 @@ function install_Opentsdb(){
 	echo "tsd.storage.fix_duplicates=true" >> $opentsdb_conf
 
 	#启动opentsdb
-	nohup $USER_SOFT_PATH/opentsdb/build/tsdb tsd --config=$USER_SOFT_PATH/opentsdb/src/opentsdb.conf &
+	sleep 1
+	echo "正在启动opentsdb..."
+	nohup $USER_SOFT_PATH/opentsdb/build/tsdb tsd --config $USER_SOFT_PATH/opentsdb/src/opentsdb.conf > /dev/null 2>&1 &
+	
+	if [ $? -eq 0 ];then
+		echo "opentdb安装成功,并已启动"
+	else
+		echo "opentdb安装失败"
+		exit 1
+	fi
 }
 
 case $1 in
